@@ -5,6 +5,9 @@
 
 package io.strimzi.kafka.bridge;
 
+import io.jaegertracing.Configuration;
+import io.opentracing.Tracer;
+import io.opentracing.util.GlobalTracer;
 import io.strimzi.kafka.bridge.amqp.AmqpBridge;
 import io.strimzi.kafka.bridge.config.BridgeConfig;
 import io.strimzi.kafka.bridge.http.HttpBridge;
@@ -34,6 +37,7 @@ public class Application {
 
     private static final int DEFAULT_HEALTH_SERVER_PORT = 8080;
 
+    @SuppressWarnings({"checkstyle:NPathComplexity"})
     public static void main(String[] args) {
         Vertx vertx = Vertx.vertx();
 
@@ -71,6 +75,11 @@ public class Application {
             if (bridgeConfig.getAmqpConfig().isEnabled() && bridgeConfig.getAmqpConfig().getPort() == healthServerPort) {
                 log.error("Health server port {} conflicts with configured AMQP port", healthServerPort);
                 System.exit(1);
+            }
+
+            if (System.getenv("JAEGER_SERVICE_NAME") != null) {
+                Tracer tracer = Configuration.fromEnv().getTracer();
+                GlobalTracer.registerIfAbsent(tracer);
             }
 
             List<Future> futures = new ArrayList<>();

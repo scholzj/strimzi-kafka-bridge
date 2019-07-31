@@ -54,6 +54,7 @@ public class HttpJsonMessageConverter implements MessageConverter<byte[], byte[]
     @Override
     public List<KafkaProducerRecord<byte[], byte[]>> toKafkaRecords(String kafkaTopic, Integer partition, Buffer messages) {
 
+
         List<KafkaProducerRecord<byte[], byte[]>> records = new ArrayList<>();
 
         JsonObject json = messages.toJsonObject();

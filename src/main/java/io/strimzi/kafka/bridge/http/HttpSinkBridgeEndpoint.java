@@ -6,6 +6,15 @@
 package io.strimzi.kafka.bridge.http;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.opentracing.References;
+import io.opentracing.Span;
+import io.opentracing.SpanContext;
+import io.opentracing.Tracer;
+import io.opentracing.propagation.Format;
+import io.opentracing.propagation.TextMap;
+import io.opentracing.propagation.TextMapAdapter;
+import io.opentracing.tag.Tags;
+import io.opentracing.util.GlobalTracer;
 import io.strimzi.kafka.bridge.BridgeContentType;
 import io.strimzi.kafka.bridge.EmbeddedFormat;
 import io.strimzi.kafka.bridge.Endpoint;
@@ -27,12 +36,15 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.kafka.client.common.TopicPartition;
+import io.vertx.kafka.client.consumer.KafkaConsumerRecord;
 import io.vertx.kafka.client.consumer.OffsetAndMetadata;
+import io.vertx.kafka.client.producer.KafkaHeader;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Deserializer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -42,6 +54,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+@SuppressWarnings({"checkstyle:ClassFanOutComplexity"})
 public class HttpSinkBridgeEndpoint<K, V> extends SinkBridgeEndpoint<K, V> {
 
     Pattern forwardedHostPattern = Pattern.compile("host=([^;]+)", Pattern.CASE_INSENSITIVE);
@@ -239,6 +252,44 @@ public class HttpSinkBridgeEndpoint<K, V> extends SinkBridgeEndpoint<K, V> {
 
             this.consume(records -> {
                 if (records.succeeded()) {
+                    Tracer tracer = GlobalTracer.get();
+
+                    String operationName = "consume";
+                    Tracer.SpanBuilder spanBuilder = tracer.buildSpan(operationName);
+
+                    for (int i = 0; i < records.result().size(); i++)   {
+                        KafkaConsumerRecord record = records.result().recordAt(i);
+
+                        Map<String, String> headers = new HashMap<>();
+                        for (Object header : record.headers()) {
+                            KafkaHeader kHeader = (KafkaHeader) header;
+                            headers.put(kHeader.key(), kHeader.value().toString());
+                        }
+
+                        try {
+                            SpanContext parentSpan = tracer.extract(Format.Builtin.HTTP_HEADERS, new TextMapAdapter(headers));
+                            if (parentSpan != null) {
+                                spanBuilder.addReference(References.FOLLOWS_FROM, parentSpan);
+                            }
+                        } catch (IllegalArgumentException e) {
+                            // pass
+                        }
+                    }
+
+                    Span span = spanBuilder.withTag(Tags.SPAN_KIND.getKey(), Tags.SPAN_KIND_SERVER).start();
+
+                    tracer.inject(span.context(), Format.Builtin.TEXT_MAP, new TextMap() {
+                        @Override
+                        public void put(String key, String value) {
+                            routingContext.response().headers().add(key, value);
+                        }
+
+                        @Override
+                        public Iterator<Map.Entry<String, String>> iterator() {
+                            throw new UnsupportedOperationException("TextMapInjectAdapter should only be used with Tracer.inject()");
+                        }
+                    });
+
                     Buffer buffer = messageConverter.toMessages(records.result());
                     if (buffer.getBytes().length > this.maxBytes) {
                         HttpBridgeError error = new HttpBridgeError(
@@ -253,6 +304,7 @@ public class HttpSinkBridgeEndpoint<K, V> extends SinkBridgeEndpoint<K, V> {
                                 buffer);
                     }
 
+                    span.finish();
                 } else {
                     HttpBridgeError error = new HttpBridgeError(
                             HttpResponseStatus.INTERNAL_SERVER_ERROR.code(),
