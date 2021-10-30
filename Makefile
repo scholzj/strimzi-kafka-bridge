@@ -78,5 +78,5 @@ docu_htmlnoheaderclean:
 	rm -rf documentation/htmlnoheader
 
 .PHONY: docu_pushtowebsite
-docu_pushtowebsite: docu_htmlnoheader docu_html
+docu_pushtowebsite:
 	./.azure/scripts/docu-push-to-website.sh
