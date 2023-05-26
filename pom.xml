@@ -19,7 +19,7 @@
 		<vertx-kafka-client.version>3.4.2-SNAPSHOT</vertx-kafka-client.version>
 		<junit.version>4.12</junit.version>
 		<vertx-unit.version>3.2.1</vertx-unit.version>
-		<spring-boot.version>1.4.2.RELEASE</spring-boot.version>
+		<spring-boot.version>2.5.15</spring-boot.version>
 		<debezium.version>0.5.0</debezium.version>
 
 	</properties>
